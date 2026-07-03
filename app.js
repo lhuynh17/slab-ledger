@@ -104,7 +104,7 @@ function Field({ label, children, required }) {
   return (
     <label className="block mb-4">
       <span className="block text-xs uppercase tracking-wider mb-1.5" style={{ color: 'var(--text-dim)' }}>
-        {label}{required && <span style={{ color: 'var(--red)' }}> *</span>}
+        {label}{required && <span style={{ color: 'var(--danger)' }}> *</span>}
       </span>
       {children}
     </label>
@@ -147,7 +147,7 @@ function SlabChip({ item, onClick }) {
   return (
     <button onClick={onClick} className="w-full text-left rounded-xl overflow-hidden active:scale-[0.98] transition-transform" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
       <div className="flex">
-        <div className="flex flex-col items-center justify-center px-3 py-2 shrink-0" style={{ background: 'var(--red)', minWidth: 64 }}>
+        <div className="flex flex-col items-center justify-center px-3 py-2 shrink-0" style={{ background: 'var(--accent)', minWidth: 64 }}>
           <span className="text-[10px] font-bold tracking-widest text-white/80">GRADE</span>
           <span className="font-display text-2xl font-bold text-white leading-none mt-0.5">{item.grade}</span>
         </div>
@@ -405,7 +405,7 @@ function AddSlabScreen({ editingItem, onSaved, onCancelEdit, notify, psaToken })
       <Field label="PSA cert number" required>
         <div className="flex gap-2">
           <TextInput ref={certRef} inputMode="numeric" placeholder="e.g. 84213567" value={form.certNumber} onChange={set('certNumber')} />
-          <button onClick={() => setScanning(true)} className="shrink-0 rounded-lg px-4 flex items-center justify-center" style={{ background: 'var(--red)' }} aria-label="Scan barcode">
+          <button onClick={() => setScanning(true)} className="shrink-0 rounded-lg px-4 flex items-center justify-center" style={{ background: 'var(--accent)' }} aria-label="Scan barcode">
             <Icon name="camera" size={20} style={{ color: '#fff' }} />
           </button>
           <button onClick={() => form.certNumber.trim() && runPsaLookup(form.certNumber.trim())} disabled={!form.certNumber.trim() || lookupState === 'looking'}
@@ -465,7 +465,7 @@ function ItemDetail({ item, onClose, onEdit, onDelete, onGoSell, onGoTrade, onRe
       </div>
       <div className="flex-1 overflow-y-auto px-4 py-4">
         <div className="rounded-xl overflow-hidden mb-4" style={{ border: '1px solid var(--border)' }}>
-          <div className="px-4 py-3" style={{ background: 'var(--red)' }}>
+          <div className="px-4 py-3" style={{ background: 'var(--accent)' }}>
             <span className="text-[10px] font-bold tracking-widest text-white/80">PSA GRADE</span>
             <div className="font-display text-4xl font-bold text-white leading-none mt-1">{item.grade}</div>
           </div>
