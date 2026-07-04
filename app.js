@@ -407,7 +407,7 @@ function AddSlabScreen({ editingItem, onSaved, onCancelEdit, notify, psaToken })
 
       <Field label="PSA cert number" required>
         <div className="flex gap-2">
-          <TextInput ref={certRef} inputMode="numeric" placeholder="e.g. 84213567" value={form.certNumber} onChange={set('certNumber')} />
+          <TextInput ref={certRef} inputMode="numeric" value={form.certNumber} onChange={set('certNumber')} />
           <button onClick={() => setScanning(true)} className="shrink-0 rounded-lg px-4 flex items-center justify-center" style={{ background: 'var(--accent)' }} aria-label="Scan barcode">
             <Icon name="camera" size={20} style={{ color: '#fff' }} />
           </button>
@@ -419,22 +419,17 @@ function AddSlabScreen({ editingItem, onSaved, onCancelEdit, notify, psaToken })
       </Field>
 
       <Field label="Card name" required>
-        <TextInput placeholder="e.g. 2003 Topps Chrome LeBron James #111" value={form.cardName} onChange={set('cardName')} />
+        <TextInput value={form.cardName} onChange={set('cardName')} />
       </Field>
 
       <Field label="Grade" required>
-        <div className="grid grid-cols-5 gap-2">
-          {GRADES.map((g) => (
-            <button key={g} onClick={() => setForm((f) => ({ ...f, grade: g }))} className="rounded-lg py-2.5 text-sm font-bold"
-              style={{ background: form.grade === g ? 'var(--gold)' : 'var(--surface2)', color: form.grade === g ? '#1a1305' : 'var(--text)', border: '1px solid var(--border)' }}>
-              {g}
-            </button>
-          ))}
-        </div>
+        <Select value={form.grade} onChange={(e) => setForm((f) => ({ ...f, grade: e.target.value }))}>
+          {GRADES.map((g) => <option key={g} value={g}>{g === 'Authentic' ? 'Authentic' : `PSA ${g}`}</option>)}
+        </Select>
       </Field>
 
       <Field label="Cost"><TextInput inputMode="decimal" placeholder="0.00" value={form.cost} onChange={set('cost')} /></Field>
-      <Field label="Source"><TextInput placeholder="e.g. eBay, local show, John D." value={form.source} onChange={set('source')} /></Field>
+      <Field label="Source"><TextInput value={form.source} onChange={set('source')} /></Field>
       <Field label="Notes">
         <textarea style={inputStyle} rows={3} className="w-full rounded-lg px-4 py-3 text-base focus:outline-none" placeholder="Centering, subgrades, provenance..." value={form.notes} onChange={set('notes')} />
       </Field>
@@ -687,7 +682,7 @@ function TradeScreen({ items, presetItem, clearPreset, onComplete, notify }) {
             <div className="flex-1"><SlabChip item={item} onClick={() => {}} /></div>
             <button onClick={reset} className="text-xs font-semibold px-2 py-1 rounded" style={{ color: 'var(--text-dim)' }}>Change</button>
           </div>
-          <Field label="What you received" required><TextInput placeholder="e.g. 2018 Luka Doncic PSA 9 + $50 cash" value={received} onChange={(e) => setReceived(e.target.value)} autoFocus /></Field>
+          <Field label="What you received" required><TextInput value={received} onChange={(e) => setReceived(e.target.value)} autoFocus /></Field>
           <Field label="Estimated value received"><TextInput inputMode="decimal" placeholder="0.00" value={estValue} onChange={(e) => setEstValue(e.target.value)} /></Field>
           <div className="rounded-lg p-4 mb-5" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
             <Row label="Estimated value in" value={money(est)} />
