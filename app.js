@@ -1,5 +1,5 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
-const { idbGet, idbSet } = window.appStorage;
+const { idbGet, idbSet, idbDelete } = window.appStorage;
 const { psaLookupCert, mapPSAResponse } = window.psaApi;
 
 /* ------------------------------------------------------------------ */
@@ -45,6 +45,43 @@ async function saveToken(token) {
   try { await idbSet(TOKEN_KEY, token); return true; } catch (e) { return false; }
 }
 
+const photoKey = (id) => `photo:${id}`;
+async function loadPhoto(id) {
+  try { return await idbGet(photoKey(id)); } catch (e) { return null; }
+}
+async function savePhoto(id, dataUrl) {
+  try {
+    if (dataUrl) await idbSet(photoKey(id), dataUrl);
+    else await idbDelete(photoKey(id));
+    return true;
+  } catch (e) { return false; }
+}
+
+function resizeImageFile(file, maxDim = 1000, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > height && width > maxDim) { height = Math.round(height * (maxDim / width)); width = maxDim; }
+      else if (height > maxDim) { width = Math.round(width * (maxDim / height)); height = maxDim; }
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
+    img.src = url;
+  });
+}
+
+function ebaySoldSearchUrl(item) {
+  const query = `${item.cardName} PSA ${item.grade}`.trim();
+  return `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(query)}&LH_Sold=1&LH_Complete=1`;
+}
+
 function fileToDataURL(file) {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
@@ -85,6 +122,7 @@ const ICON_PATHS = {
   alert: <><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></>,
   download: <><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></>,
   package: <><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></>,
+  external: <><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></>,
 };
 
 function Icon({ name, size = 18, className = '', style }) {
@@ -272,9 +310,12 @@ function AddSlabScreen({ editingItem, onSaved, onCancelEdit, notify, psaToken })
   const [ocrState, setOcrState] = useState('idle'); // idle | reading | done | error
   const [lookupState, setLookupState] = useState('idle'); // idle | looking | done | error | no-token
   const [note, setNote] = useState(null); // { tone, text }
+  const [photoDataUrl, setPhotoDataUrl] = useState(null);
   const certRef = useRef(null);
   const cameraInputRef = useRef(null);
   const libraryInputRef = useRef(null);
+  const photoCameraRef = useRef(null);
+  const photoLibraryRef = useRef(null);
 
   useEffect(() => {
     if (editingItem) {
@@ -282,10 +323,23 @@ function AddSlabScreen({ editingItem, onSaved, onCancelEdit, notify, psaToken })
         certNumber: editingItem.certNumber, cardName: editingItem.cardName, grade: editingItem.grade,
         cost: String(editingItem.cost ?? ''), source: editingItem.source, notes: editingItem.notes,
       });
+      loadPhoto(editingItem.id).then(setPhotoDataUrl);
+    } else {
+      setPhotoDataUrl(null);
     }
   }, [editingItem]);
 
   useEffect(() => { certRef.current?.focus(); }, []);
+
+  const handleCardPhoto = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const dataUrl = await resizeImageFile(file);
+      setPhotoDataUrl(dataUrl);
+    } catch (err) { /* silently skip a bad image */ }
+  };
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const canSave = form.certNumber.trim().length > 0 && form.cardName.trim().length > 0;
@@ -349,13 +403,16 @@ function AddSlabScreen({ editingItem, onSaved, onCancelEdit, notify, psaToken })
     };
     if (editingItem) {
       await onSaved({ ...editingItem, ...payload });
+      await savePhoto(editingItem.id, photoDataUrl);
       notify('Slab updated');
       onCancelEdit();
     } else {
       const item = { id: uid(), ...payload, status: 'In Inventory', dateAdded: todayISO(), sale: null, trade: null };
       await onSaved(item);
+      await savePhoto(item.id, photoDataUrl);
       notify('Added to inventory');
       setForm(emptyForm());
+      setPhotoDataUrl(null);
       setOcrState('idle'); setLookupState('idle'); setNote(null);
       certRef.current?.focus();
     }
@@ -398,12 +455,35 @@ function AddSlabScreen({ editingItem, onSaved, onCancelEdit, notify, psaToken })
         <input ref={libraryInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhoto} />
       </div>
 
+      <div className="rounded-lg p-3 mb-4" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+        <p className="text-sm font-semibold mb-3" style={{ color: 'var(--text)' }}>Card photo</p>
+        {photoDataUrl ? (
+          <div className="relative mb-3">
+            <img src={photoDataUrl} alt="Card preview" className="w-full rounded-lg" style={{ maxHeight: 220, objectFit: 'contain', background: 'var(--surface2)' }} />
+            <button onClick={() => setPhotoDataUrl(null)} className="absolute top-2 right-2 rounded-full p-1.5" style={{ background: 'rgba(0,0,0,0.6)' }} aria-label="Remove photo">
+              <Icon name="x" size={16} style={{ color: '#fff' }} />
+            </button>
+          </div>
+        ) : null}
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={() => photoCameraRef.current?.click()} className="rounded-lg px-3 py-2.5 flex items-center justify-center gap-1.5 text-sm font-semibold" style={{ background: 'var(--surface2)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+            <Icon name="camera" size={16} /> {photoDataUrl ? 'Retake' : 'Take Photo'}
+          </button>
+          <button onClick={() => photoLibraryRef.current?.click()} className="rounded-lg px-3 py-2.5 flex items-center justify-center gap-1.5 text-sm font-semibold" style={{ background: 'var(--surface2)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+            <Icon name="image" size={16} /> Upload Photo
+          </button>
+        </div>
+        <input ref={photoCameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleCardPhoto} />
+        <input ref={photoLibraryRef} type="file" accept="image/*" className="hidden" onChange={handleCardPhoto} />
+      </div>
+
       {note && (
         <div className="rounded-lg p-3 mb-4 flex items-start gap-2" style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${noteColors[note.tone]}` }}>
           <Icon name="alert" size={16} style={{ color: noteColors[note.tone], flexShrink: 0, marginTop: 2 }} />
           <p className="text-xs" style={{ color: 'var(--text)' }}>{note.text}</p>
         </div>
       )}
+
 
       <Field label="PSA cert number" required>
         <div className="flex gap-2">
@@ -455,6 +535,13 @@ function Row({ label, value, valueColor }) {
 }
 
 function ItemDetail({ item, onClose, onEdit, onDelete, onGoSell, onGoTrade, onRevert }) {
+  const [photo, setPhoto] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    loadPhoto(item.id).then((p) => { if (!cancelled) setPhoto(p); });
+    return () => { cancelled = true; };
+  }, [item.id]);
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col" style={{ background: 'var(--bg)' }}>
       <div className="flex items-center justify-between px-4 py-3" style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
@@ -472,6 +559,12 @@ function ItemDetail({ item, onClose, onEdit, onDelete, onGoSell, onGoTrade, onRe
             <p className="font-mono text-sm mt-1" style={{ color: 'var(--text-dim)' }}>CERT #{item.certNumber}</p>
           </div>
         </div>
+
+        {photo && (
+          <div className="rounded-xl overflow-hidden mb-4" style={{ border: '1px solid var(--border)' }}>
+            <img src={photo} alt={item.cardName} style={{ width: '100%', display: 'block', background: 'var(--surface2)' }} />
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div className="rounded-lg p-3" style={{ background: 'var(--surface)' }}><p className="text-xs" style={{ color: 'var(--text-dim)' }}>Cost</p><p className="font-semibold text-lg" style={{ color: 'var(--text)' }}>{money(item.cost)}</p></div>
@@ -507,6 +600,7 @@ function ItemDetail({ item, onClose, onEdit, onDelete, onGoSell, onGoTrade, onRe
               <Btn variant="ghost" onClick={() => onGoTrade(item)}><Icon name="repeat" size={16} /> Trade</Btn>
             </div>
           )}
+          <Btn variant="ghost" onClick={() => window.open(ebaySoldSearchUrl(item), '_blank')}><Icon name="external" size={16} /> Check eBay sold comps</Btn>
           {item.status !== 'In Inventory' && <Btn variant="ghost" onClick={() => onRevert(item)}>Revert to In Inventory</Btn>}
           <Btn variant="ghost" onClick={() => onEdit(item)}><Icon name="edit" size={16} /> Edit details</Btn>
           <Btn variant="danger" onClick={() => onDelete(item)}><Icon name="trash" size={16} /> Delete</Btn>
@@ -822,6 +916,7 @@ function App() {
   const deleteItem = async (item) => {
     if (!window.confirm(`Delete ${item.cardName || 'this slab'}? This can't be undone.`)) return;
     await persist(items.filter((it) => it.id !== item.id));
+    await savePhoto(item.id, null);
     notify('Deleted');
   };
   const revertItem = async (item) => { await addOrUpdate({ ...item, status: 'In Inventory', sale: null, trade: null }); notify('Reverted to inventory'); };
