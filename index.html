@@ -18,6 +18,12 @@
   :root {
     --bg: #1A1B1D; --surface: #232426; --surface2: #2B2C2F; --border: #323335;
     --text: #E8E7E4; --text-dim: #8C8B87; --accent: #3E5C6E; --gold: #C9A24B; --green: #3FA35D; --danger: #D2483C;
+    --surface-blur: rgba(35,36,38,.78); --nav-blur: rgba(35,36,38,.85);
+  }
+  [data-theme="light"] {
+    --bg: #F5F5F3; --surface: #FFFFFF; --surface2: #F1F1EF; --border: #E3E2DD;
+    --text: #1E2430; --text-dim: #6B7280; --accent: #1E3A5F; --gold: #B8873A; --green: #2F8F52; --danger: #C13E33;
+    --surface-blur: rgba(255,255,255,.82); --nav-blur: rgba(255,255,255,.88);
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: var(--bg); overscroll-behavior: none; }
@@ -67,8 +73,8 @@
   .shadow-card { box-shadow: 0 1px 2px rgba(0,0,0,.24), 0 4px 12px rgba(0,0,0,.28); }
   .shadow-btn { box-shadow: 0 2px 6px rgba(0,0,0,.3); }
   .tabular-nums { font-variant-numeric: tabular-nums; }
-  .header-blur { background: rgba(35,36,38,.72); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
-  .nav-blur { background: rgba(35,36,38,.82); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+  .header-blur { background: var(--surface-blur); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+  .nav-blur { background: var(--nav-blur); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
   .nav-safe-pad { padding-bottom: calc(0.625rem + env(safe-area-inset-bottom, 0px)); }
 
   @keyframes screenFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
@@ -76,13 +82,6 @@
 
   @keyframes pulseSkeleton { 0%, 100% { opacity: .5; } 50% { opacity: .9; } }
   .skeleton { background: var(--surface2); border-radius: .5rem; animation: pulseSkeleton 1.3s ease-in-out infinite; }
-
-  .nav-indicator { position: relative; }
-  .nav-indicator::after {
-    content: ''; position: absolute; top: 2px; left: 50%; transform: translateX(-50%);
-    width: 4px; height: 4px; border-radius: 999px; background: var(--gold); opacity: 0; transition: opacity .15s ease;
-  }
-  .nav-indicator.active::after { opacity: 1; }
 </style>
 </head>
 <body>

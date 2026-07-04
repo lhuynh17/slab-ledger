@@ -8,6 +8,8 @@ const { psaLookupCert, mapPSAResponse } = window.psaApi;
 
 const INV_KEY = 'inventory';
 const TOKEN_KEY = 'psa_token';
+const THEME_KEY = 'theme';
+const SOURCE_PRESETS = ['Local Purchase', 'eBay', 'Card Show', 'Trade-in', 'Consignment', 'Other'];
 const GRADES = ['10', '9.5', '9', '8.5', '8', '7.5', '7', '6', '5', '4', '3', '2', '1', 'Authentic'];
 const PAYMENT_MEDIUMS = ['Cash', 'Venmo', 'PayPal', 'Zelle', 'CashApp', 'Credit Card', 'Check', 'Trade + Cash', 'Other'];
 
@@ -43,6 +45,16 @@ async function loadToken() {
 }
 async function saveToken(token) {
   try { await idbSet(TOKEN_KEY, token); return true; } catch (e) { return false; }
+}
+async function loadTheme() {
+  try { return (await idbGet(THEME_KEY)) || null; } catch (e) { return null; }
+}
+async function saveTheme(theme) {
+  try { await idbSet(THEME_KEY, theme); return true; } catch (e) { return false; }
+}
+function applyThemeColorMeta(theme) {
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', theme === 'light' ? '#F5F5F3' : '#050507');
 }
 
 const photoKey = (id) => `photo:${id}`;
@@ -123,6 +135,9 @@ const ICON_PATHS = {
   download: <><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></>,
   package: <><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></>,
   external: <><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></>,
+  save: <><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></>,
+  lightbulb: <><path d="M9 18h6" /><path d="M10 22h4" /><path d="M12 2a6 6 0 00-4 10.5c.6.6 1 1.4 1 2.5h6c0-1.1.4-1.9 1-2.5A6 6 0 0012 2z" /></>,
+  tag: <><path d="M20.59 13.41L11 3.83A2 2 0 009.59 3.25H4a1 1 0 00-1 1v5.59a2 2 0 00.59 1.41l9.58 9.58a2 2 0 002.83 0l5.59-5.59a2 2 0 000-2.83z" /><circle cx="7.5" cy="7.5" r="1.25" fill="currentColor" stroke="none" /></>,
 };
 
 function Icon({ name, size = 18, className = '', style }) {
@@ -130,6 +145,17 @@ function Icon({ name, size = 18, className = '', style }) {
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
       strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
       {ICON_PATHS[name] || null}
+    </svg>
+  );
+}
+
+function LogoMark({ size = 26 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <rect x="4" y="3" width="13" height="18" rx="2" transform="rotate(-8 4 3)" stroke="var(--gold)" strokeWidth="1.6" />
+      <rect x="7" y="4" width="13" height="18" rx="2" fill="var(--surface2)" stroke="var(--gold)" strokeWidth="1.6" />
+      <line x1="10" y1="9" x2="17" y2="9" stroke="var(--gold)" strokeWidth="1.4" strokeLinecap="round" />
+      <line x1="10" y1="13" x2="17" y2="13" stroke="var(--gold)" strokeWidth="1.4" strokeLinecap="round" />
     </svg>
   );
 }
@@ -292,7 +318,7 @@ function ScannerModal({ onDetect, onClose }) {
 /* Add / Edit Slab screen                                              */
 /* ------------------------------------------------------------------ */
 
-function emptyForm() { return { certNumber: '', cardName: '', grade: '10', cost: '', source: '', notes: '' }; }
+function emptyForm() { return { certNumber: '', cardName: '', grade: '10', gradeLabel: '', cost: '', source: '', notes: '', tags: [] }; }
 
 function normalizeGrade(g) {
   if (!g) return null;
@@ -301,16 +327,56 @@ function normalizeGrade(g) {
   return match || (cleaned ? cleaned : null);
 }
 
-function AddSlabScreen({ editingItem, onSaved, onCancelEdit, notify, psaToken }) {
+function CollectionOverview({ items }) {
+  const onHand = items.filter((it) => it.status === 'In Inventory').length;
+  const totalValue = items.filter((it) => it.status === 'In Inventory').reduce((s, it) => s + (it.cost || 0), 0);
+  return (
+    <div className="rounded-lg p-4 mb-4 shadow-card" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <p className="text-xs uppercase tracking-wider mb-3" style={{ color: 'var(--text-dim)' }}>Collection Overview</p>
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div>
+          <p className="font-display text-2xl font-bold tabular-nums" style={{ color: 'var(--text)' }}>{onHand}</p>
+          <p className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-dim)' }}>On Hand</p>
+        </div>
+        <div>
+          <p className="font-display text-2xl font-bold tabular-nums" style={{ color: 'var(--text)' }}>{items.length}</p>
+          <p className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-dim)' }}>Total Slabs</p>
+        </div>
+        <div>
+          <p className="font-display text-2xl font-bold tabular-nums" style={{ color: 'var(--gold)' }}>{money(totalValue)}</p>
+          <p className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-dim)' }}>Total Value</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QuickTips() {
+  return (
+    <div className="rounded-lg p-3 mt-4 flex items-start gap-3 shadow-card" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <Icon name="lightbulb" size={18} style={{ color: 'var(--gold)', flexShrink: 0, marginTop: 2 }} />
+      <div>
+        <p className="text-sm font-semibold mb-0.5" style={{ color: 'var(--text)' }}>Quick tip</p>
+        <p className="text-xs" style={{ color: 'var(--text-dim)' }}>For best results, take a clear, well-lit photo of the PSA label — avoid glare across the barcode and cert number.</p>
+      </div>
+    </div>
+  );
+}
+
+function AddSlabScreen({ editingItem, onSaved, onCancelEdit, notify, psaToken, items }) {
   const [form, setForm] = useState(editingItem ? {
     certNumber: editingItem.certNumber, cardName: editingItem.cardName, grade: editingItem.grade,
-    cost: String(editingItem.cost ?? ''), source: editingItem.source, notes: editingItem.notes,
+    gradeLabel: editingItem.gradeLabel || '', cost: String(editingItem.cost ?? ''), source: editingItem.source,
+    notes: editingItem.notes, tags: editingItem.tags || [],
   } : emptyForm());
   const [scanning, setScanning] = useState(false);
   const [ocrState, setOcrState] = useState('idle'); // idle | reading | done | error
   const [lookupState, setLookupState] = useState('idle'); // idle | looking | done | error | no-token
   const [note, setNote] = useState(null); // { tone, text }
   const [photoDataUrl, setPhotoDataUrl] = useState(null);
+  const [tagInput, setTagInput] = useState('');
+  const [addingTag, setAddingTag] = useState(false);
+  const [sourceOther, setSourceOther] = useState(false);
   const certRef = useRef(null);
   const cameraInputRef = useRef(null);
   const libraryInputRef = useRef(null);
@@ -321,8 +387,10 @@ function AddSlabScreen({ editingItem, onSaved, onCancelEdit, notify, psaToken })
     if (editingItem) {
       setForm({
         certNumber: editingItem.certNumber, cardName: editingItem.cardName, grade: editingItem.grade,
-        cost: String(editingItem.cost ?? ''), source: editingItem.source, notes: editingItem.notes,
+        gradeLabel: editingItem.gradeLabel || '', cost: String(editingItem.cost ?? ''), source: editingItem.source,
+        notes: editingItem.notes, tags: editingItem.tags || [],
       });
+      setSourceOther(!!editingItem.source && !SOURCE_PRESETS.includes(editingItem.source));
       loadPhoto(editingItem.id).then(setPhotoDataUrl);
     } else {
       setPhotoDataUrl(null);
@@ -344,6 +412,14 @@ function AddSlabScreen({ editingItem, onSaved, onCancelEdit, notify, psaToken })
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const canSave = form.certNumber.trim().length > 0 && form.cardName.trim().length > 0;
 
+  const addTag = () => {
+    const t = tagInput.trim();
+    if (t && !form.tags.includes(t)) setForm((f) => ({ ...f, tags: [...f.tags, t] }));
+    setTagInput('');
+    setAddingTag(false);
+  };
+  const removeTag = (t) => setForm((f) => ({ ...f, tags: f.tags.filter((x) => x !== t) }));
+
   const runPsaLookup = async (cert) => {
     if (!psaToken) {
       setLookupState('no-token');
@@ -355,7 +431,7 @@ function AddSlabScreen({ editingItem, onSaved, onCancelEdit, notify, psaToken })
       const data = await psaLookupCert(cert, psaToken);
       const mapped = mapPSAResponse(data);
       if (mapped.found) {
-        setForm((f) => ({ ...f, cardName: mapped.cardName || f.cardName, grade: normalizeGrade(mapped.grade) || f.grade }));
+        setForm((f) => ({ ...f, cardName: mapped.cardName || f.cardName, grade: normalizeGrade(mapped.grade) || f.grade, gradeLabel: mapped.gradeLabel || f.gradeLabel }));
         setNote({ tone: 'good', text: 'Auto-filled from PSA\u2019s cert database \u2014 double-check before saving.' });
       } else {
         setNote({ tone: 'limited', text: 'PSA didn\u2019t return a matching record for that cert number. Double-check the digits or fill in manually.' });
@@ -398,8 +474,8 @@ function AddSlabScreen({ editingItem, onSaved, onCancelEdit, notify, psaToken })
   const handleSave = async () => {
     if (!canSave) return;
     const payload = {
-      certNumber: form.certNumber.trim(), cardName: form.cardName.trim(), grade: form.grade,
-      cost: parseFloat(form.cost) || 0, source: form.source.trim(), notes: form.notes.trim(),
+      certNumber: form.certNumber.trim(), cardName: form.cardName.trim(), grade: form.grade, gradeLabel: form.gradeLabel,
+      cost: parseFloat(form.cost) || 0, source: form.source.trim(), notes: form.notes.trim(), tags: form.tags,
     };
     if (editingItem) {
       await onSaved({ ...editingItem, ...payload });
@@ -413,6 +489,7 @@ function AddSlabScreen({ editingItem, onSaved, onCancelEdit, notify, psaToken })
       notify('Added to inventory');
       setForm(emptyForm());
       setPhotoDataUrl(null);
+      setSourceOther(false);
       setOcrState('idle'); setLookupState('idle'); setNote(null);
       certRef.current?.focus();
     }
@@ -420,6 +497,7 @@ function AddSlabScreen({ editingItem, onSaved, onCancelEdit, notify, psaToken })
 
   const busy = ocrState === 'reading' || lookupState === 'looking';
   const noteColors = { good: 'var(--green)', limited: 'var(--gold)', error: 'var(--danger)' };
+  const noteTitles = { good: 'PSA Lookup Successful', limited: 'Cert Captured', error: 'Lookup Issue' };
 
   return (
     <div className="px-4 pt-4 pb-28">
@@ -430,15 +508,19 @@ function AddSlabScreen({ editingItem, onSaved, onCancelEdit, notify, psaToken })
       )}
       <h1 className="font-display text-2xl font-bold mb-4" style={{ color: 'var(--text)' }}>{editingItem ? 'Edit Slab' : 'Add Slab'}</h1>
 
-      <div className="rounded-lg p-3 mb-4" style={{ background: 'rgba(201,162,75,0.08)', border: '1px solid var(--gold)' }}>
-        <div className="flex items-center gap-3 mb-3">
-          <Icon name="zap" size={20} style={{ color: 'var(--gold)', flexShrink: 0 }} />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Read cert &amp; look up on PSA</p>
-            <p className="text-xs" style={{ color: 'var(--text-dim)' }}>Photo reads the cert #, PSA fills in the rest</p>
+      {!editingItem && <CollectionOverview items={items} />}
+
+      <div className="rounded-lg p-4 mb-4 shadow-card" style={{ background: 'var(--surface)', border: '1px solid var(--gold)' }}>
+        <div className="flex items-center gap-3 mb-4">
+          <div className="rounded-full flex items-center justify-center shrink-0" style={{ width: 40, height: 40, background: 'rgba(201,162,75,0.15)' }}>
+            <Icon name="zap" size={20} style={{ color: 'var(--gold)' }} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Look up your card on PSA</p>
+            <p className="text-xs" style={{ color: 'var(--text-dim)' }}>Snap a photo of the label or upload one and we'll fill in the details.</p>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-2 mb-4">
           <button onClick={() => cameraInputRef.current?.click()} disabled={busy}
             className="rounded-lg px-3 py-2.5 flex items-center justify-center gap-1.5 text-sm font-semibold disabled:opacity-50"
             style={{ background: 'var(--gold)', color: '#1a1305' }}>
@@ -453,9 +535,119 @@ function AddSlabScreen({ editingItem, onSaved, onCancelEdit, notify, psaToken })
         </div>
         <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhoto} />
         <input ref={libraryInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhoto} />
+
+        <div className="flex items-center gap-3 mb-4">
+          <div className="flex-1 h-px" style={{ background: 'var(--border)' }} />
+          <span className="text-xs font-semibold" style={{ color: 'var(--text-dim)' }}>OR</span>
+          <div className="flex-1 h-px" style={{ background: 'var(--border)' }} />
+        </div>
+
+        <Field label="Enter PSA cert number manually">
+          <div className="flex gap-2">
+            <TextInput ref={certRef} inputMode="numeric" value={form.certNumber} onChange={set('certNumber')} />
+            <button onClick={() => setScanning(true)} className="shrink-0 rounded-lg px-4 flex items-center justify-center" style={{ background: 'var(--accent)' }} aria-label="Scan barcode">
+              <Icon name="camera" size={20} style={{ color: '#fff' }} />
+            </button>
+          </div>
+        </Field>
+        <Btn onClick={() => form.certNumber.trim() && runPsaLookup(form.certNumber.trim())} disabled={!form.certNumber.trim() || lookupState === 'looking'} variant="ghost">
+          <Icon name="search" size={16} /> Look Up
+        </Btn>
       </div>
 
-      <div className="rounded-lg p-3 mb-4" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+      {note && (
+        <div className="rounded-lg p-3 mb-4 flex items-start gap-3" style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${noteColors[note.tone]}` }}>
+          <div className="rounded-full flex items-center justify-center shrink-0 mt-0.5" style={{ width: 22, height: 22, background: noteColors[note.tone] }}>
+            <Icon name={note.tone === 'good' ? 'check' : 'alert'} size={13} style={{ color: note.tone === 'good' ? '#08210F' : '#fff' }} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>{noteTitles[note.tone]}</p>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-dim)' }}>{note.text}</p>
+          </div>
+          {photoDataUrl && <img src={photoDataUrl} alt="" className="rounded-lg shrink-0" style={{ width: 48, height: 48, objectFit: 'cover' }} />}
+        </div>
+      )}
+
+      <Field label="Card name" required>
+        <div className="relative">
+          <textarea rows={2} value={form.cardName} onChange={set('cardName')}
+            style={inputStyle} className="w-full rounded-lg px-4 py-3 pr-9 text-base focus:outline-none" />
+          {form.cardName && (
+            <button onClick={() => setForm((f) => ({ ...f, cardName: '' }))} className="absolute top-3 right-3" style={{ color: 'var(--text-dim)' }} aria-label="Clear card name">
+              <Icon name="x" size={16} />
+            </button>
+          )}
+        </div>
+      </Field>
+
+      <Field label="Grade" required>
+        <div className="flex gap-2 items-center">
+          <div className="flex-1">
+            <Select value={form.grade} onChange={(e) => setForm((f) => ({ ...f, grade: e.target.value }))}>
+              {GRADES.map((g) => <option key={g} value={g}>{g === 'Authentic' ? 'Authentic' : `PSA ${g}`}</option>)}
+            </Select>
+          </div>
+          {form.gradeLabel && (
+            <span className="text-xs font-semibold px-3 py-2 rounded-lg shrink-0" style={{ background: 'rgba(63,163,93,0.15)', color: 'var(--green)' }}>{form.gradeLabel}</span>
+          )}
+        </div>
+      </Field>
+
+      <Field label="Cost (USD)">
+        <div className="relative">
+          <TextInput inputMode="decimal" placeholder="0.00" value={form.cost} onChange={set('cost')} className="pr-9" />
+          <span className="absolute top-1/2 right-4 -translate-y-1/2 text-sm font-semibold" style={{ color: 'var(--text-dim)' }}>$</span>
+        </div>
+      </Field>
+
+      <Field label="Source">
+        {sourceOther ? (
+          <div className="flex gap-2">
+            <TextInput value={form.source} onChange={set('source')} className="flex-1" />
+            <button onClick={() => { setSourceOther(false); setForm((f) => ({ ...f, source: '' })); }} className="shrink-0 rounded-lg px-3 text-xs font-semibold" style={{ background: 'var(--surface2)', color: 'var(--text-dim)', border: '1px solid var(--border)' }}>List</button>
+          </div>
+        ) : (
+          <Select value={SOURCE_PRESETS.includes(form.source) ? form.source : ''} onChange={(e) => {
+            if (e.target.value === 'Other') { setSourceOther(true); setForm((f) => ({ ...f, source: '' })); }
+            else setForm((f) => ({ ...f, source: e.target.value }));
+          }}>
+            <option value="" disabled>Select a source…</option>
+            {SOURCE_PRESETS.map((s) => <option key={s} value={s}>{s}</option>)}
+          </Select>
+        )}
+      </Field>
+
+      <Field label="Notes (optional)">
+        <textarea style={inputStyle} rows={3} maxLength={200} className="w-full rounded-lg px-4 py-3 text-base focus:outline-none" value={form.notes} onChange={set('notes')} />
+        <p className="text-[11px] text-right mt-1" style={{ color: 'var(--text-dim)' }}>{form.notes.length}/200</p>
+      </Field>
+
+      <Field label="Tags">
+        <div className="flex flex-wrap gap-2 items-center">
+          {form.tags.map((t) => (
+            <span key={t} className="text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5" style={{ background: 'var(--surface2)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+              {t}
+              <button onClick={() => removeTag(t)} aria-label={`Remove tag ${t}`}><Icon name="x" size={12} /></button>
+            </span>
+          ))}
+          {addingTag ? (
+            <input autoFocus value={tagInput} onChange={(e) => setTagInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') addTag(); if (e.key === 'Escape') { setAddingTag(false); setTagInput(''); } }}
+              onBlur={addTag} placeholder="Tag name"
+              style={inputStyle} className="rounded-full px-3 py-1.5 text-xs w-28 focus:outline-none" />
+          ) : (
+            <button onClick={() => setAddingTag(true)} className="text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1" style={{ color: 'var(--gold)', border: '1px dashed var(--gold)' }}>
+              <Icon name="plus" size={12} /> Add Tag
+            </button>
+          )}
+        </div>
+      </Field>
+
+      <Btn onClick={handleSave} disabled={!canSave} className="mt-2"><Icon name="save" size={18} /> {editingItem ? 'Save changes' : 'Save Slab'}</Btn>
+
+      {!editingItem && <QuickTips />}
+
+      <div className="rounded-lg p-3 mt-4" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
         <p className="text-sm font-semibold mb-3" style={{ color: 'var(--text)' }}>Card photo</p>
         {photoDataUrl ? (
           <div className="relative mb-3">
@@ -476,45 +668,6 @@ function AddSlabScreen({ editingItem, onSaved, onCancelEdit, notify, psaToken })
         <input ref={photoCameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleCardPhoto} />
         <input ref={photoLibraryRef} type="file" accept="image/*" className="hidden" onChange={handleCardPhoto} />
       </div>
-
-      {note && (
-        <div className="rounded-lg p-3 mb-4 flex items-start gap-2" style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${noteColors[note.tone]}` }}>
-          <Icon name="alert" size={16} style={{ color: noteColors[note.tone], flexShrink: 0, marginTop: 2 }} />
-          <p className="text-xs" style={{ color: 'var(--text)' }}>{note.text}</p>
-        </div>
-      )}
-
-
-      <Field label="PSA cert number" required>
-        <div className="flex gap-2">
-          <TextInput ref={certRef} inputMode="numeric" value={form.certNumber} onChange={set('certNumber')} />
-          <button onClick={() => setScanning(true)} className="shrink-0 rounded-lg px-4 flex items-center justify-center" style={{ background: 'var(--accent)' }} aria-label="Scan barcode">
-            <Icon name="camera" size={20} style={{ color: '#fff' }} />
-          </button>
-          <button onClick={() => form.certNumber.trim() && runPsaLookup(form.certNumber.trim())} disabled={!form.certNumber.trim() || lookupState === 'looking'}
-            className="shrink-0 rounded-lg px-3 text-xs font-semibold disabled:opacity-40" style={{ background: 'var(--surface2)', color: 'var(--text)', border: '1px solid var(--border)' }}>
-            Look up
-          </button>
-        </div>
-      </Field>
-
-      <Field label="Card name" required>
-        <TextInput value={form.cardName} onChange={set('cardName')} />
-      </Field>
-
-      <Field label="Grade" required>
-        <Select value={form.grade} onChange={(e) => setForm((f) => ({ ...f, grade: e.target.value }))}>
-          {GRADES.map((g) => <option key={g} value={g}>{g === 'Authentic' ? 'Authentic' : `PSA ${g}`}</option>)}
-        </Select>
-      </Field>
-
-      <Field label="Cost"><TextInput inputMode="decimal" placeholder="0.00" value={form.cost} onChange={set('cost')} /></Field>
-      <Field label="Source"><TextInput value={form.source} onChange={set('source')} /></Field>
-      <Field label="Notes">
-        <textarea style={inputStyle} rows={3} className="w-full rounded-lg px-4 py-3 text-base focus:outline-none" placeholder="Centering, subgrades, provenance..." value={form.notes} onChange={set('notes')} />
-      </Field>
-
-      <Btn onClick={handleSave} disabled={!canSave} className="mt-2"><Icon name="plus" size={18} /> {editingItem ? 'Save changes' : 'Add to inventory'}</Btn>
 
       {scanning && <ScannerModal onDetect={(val) => { setForm((f) => ({ ...f, certNumber: val })); setScanning(false); runPsaLookup(val); }} onClose={() => setScanning(false)} />}
     </div>
@@ -555,10 +708,21 @@ function ItemDetail({ item, onClose, onEdit, onDelete, onGoSell, onGoTrade, onRe
             <div className="font-display text-4xl font-bold text-white leading-none mt-1">{item.grade}</div>
           </div>
           <div className="px-4 py-3" style={{ background: 'var(--surface)' }}>
-            <p className="font-semibold text-lg" style={{ color: 'var(--text)' }}>{item.cardName}</p>
+            <div className="flex items-start justify-between gap-2">
+              <p className="font-semibold text-lg" style={{ color: 'var(--text)' }}>{item.cardName}</p>
+              {item.gradeLabel && <span className="text-xs font-semibold px-2 py-1 rounded shrink-0" style={{ background: 'rgba(63,163,93,0.15)', color: 'var(--green)' }}>{item.gradeLabel}</span>}
+            </div>
             <p className="font-mono text-sm mt-1" style={{ color: 'var(--text-dim)' }}>CERT #{item.certNumber}</p>
           </div>
         </div>
+
+        {item.tags && item.tags.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-4">
+            {item.tags.map((t) => (
+              <span key={t} className="text-xs font-semibold px-3 py-1.5 rounded-full" style={{ background: 'var(--surface2)', color: 'var(--text)', border: '1px solid var(--border)' }}>{t}</span>
+            ))}
+          </div>
+        )}
 
         {photo && (
           <div className="rounded-xl overflow-hidden mb-4" style={{ border: '1px solid var(--border)' }}>
@@ -850,14 +1014,28 @@ function ShowModeScreen({ items, onNav }) {
 /* Settings — PSA API token                                            */
 /* ------------------------------------------------------------------ */
 
-function SettingsScreen({ psaToken, onSaveToken, notify }) {
+function SettingsScreen({ psaToken, onSaveToken, notify, theme, onChangeTheme }) {
   const [value, setValue] = useState(psaToken || '');
   const save = async () => { await onSaveToken(value.trim()); notify(value.trim() ? 'PSA token saved' : 'PSA token cleared'); };
 
   return (
     <div className="px-4 pt-4 pb-28">
       <h1 className="font-display text-2xl font-bold mb-4" style={{ color: 'var(--text)' }}>Settings</h1>
-      <div className="rounded-lg p-4 mb-4" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+
+      <div className="rounded-lg p-4 mb-4 shadow-card" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+        <p className="text-sm font-semibold mb-3" style={{ color: 'var(--text)' }}>Appearance</p>
+        <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+          {[{ id: 'dark', label: 'Dark', icon: 'zap' }, { id: 'light', label: 'Light', icon: 'lightbulb' }].map((opt) => (
+            <button key={opt.id} onClick={() => onChangeTheme(opt.id)}
+              className="flex-1 py-2.5 flex items-center justify-center gap-1.5 text-sm font-semibold"
+              style={{ background: theme === opt.id ? 'var(--gold)' : 'var(--surface2)', color: theme === opt.id ? '#1a1305' : 'var(--text-dim)' }}>
+              <Icon name={opt.icon} size={15} /> {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-lg p-4 mb-4 shadow-card" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
         <p className="text-sm font-semibold mb-2" style={{ color: 'var(--text)' }}>PSA API token</p>
         <p className="text-xs mb-3" style={{ color: 'var(--text-dim)' }}>
           Used to auto-fill card name and grade after a cert-number scan. Get a free token by signing in at{' '}
@@ -868,13 +1046,14 @@ function SettingsScreen({ psaToken, onSaveToken, notify }) {
         </Field>
         <Btn onClick={save}><Icon name="check" size={16} /> Save token</Btn>
       </div>
-      <div className="rounded-lg p-4" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div className="rounded-lg p-4 shadow-card" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
         <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>About this app</p>
         <p className="text-xs" style={{ color: 'var(--text-dim)' }}>Slab Ledger stores everything locally on this device (IndexedDB) — nothing syncs to a server. Use the CSV export on the Inventory screen to back up or move your data.</p>
       </div>
     </div>
   );
 }
+
 
 /* ------------------------------------------------------------------ */
 /* App shell                                                           */
@@ -892,6 +1071,7 @@ const TABS = [
 function App() {
   const [items, setItems] = useState([]);
   const [psaToken, setPsaToken] = useState('');
+  const [theme, setThemeState] = useState('dark');
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('add');
   const [editingItem, setEditingItem] = useState(null);
@@ -900,9 +1080,19 @@ function App() {
   const [toast, setToast] = useState('');
 
   useEffect(() => {
-    Promise.all([loadInventory(), loadToken()]).then(([inv, token]) => {
-      setItems(inv); setPsaToken(token); setLoading(false);
+    Promise.all([loadInventory(), loadToken(), loadTheme()]).then(([inv, token, savedTheme]) => {
+      setItems(inv); setPsaToken(token);
+      const initialTheme = savedTheme || (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      setThemeState(initialTheme);
+      applyThemeColorMeta(initialTheme);
+      setLoading(false);
     });
+  }, []);
+
+  const changeTheme = useCallback(async (next) => {
+    setThemeState(next);
+    applyThemeColorMeta(next);
+    await saveTheme(next);
   }, []);
 
   const notify = useCallback((text) => { setToast(text); setTimeout(() => setToast(''), 1800); }, []);
@@ -946,7 +1136,7 @@ function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen px-4 pt-6" style={{ background: 'var(--bg)' }}>
+      <div className="min-h-screen px-4 pt-6" data-theme={theme} style={{ background: 'var(--bg)' }}>
         <div className="skeleton h-6 mb-6" style={{ width: '40%' }} />
         <div className="skeleton h-16 mb-3" />
         <div className="skeleton h-16 mb-3" />
@@ -956,28 +1146,33 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen" style={{ background: 'var(--bg)', fontFamily: 'Inter, sans-serif' }}>
+    <div className="min-h-screen" data-theme={theme} style={{ background: 'var(--bg)', fontFamily: 'Inter, sans-serif' }}>
       <Toast text={toast} />
       <header className="sticky top-0 z-30 px-4 py-3 flex items-center justify-between header-blur" style={{ borderBottom: '1px solid var(--border)' }}>
-        <h1 className="font-display text-xl font-bold tracking-wide" style={{ color: 'var(--text)' }}>SLAB LEDGER</h1>
+        <div className="flex items-center gap-2">
+          <LogoMark size={24} />
+          <h1 className="font-display text-xl font-bold tracking-wide" style={{ color: 'var(--text)' }}>SLAB LEDGER</h1>
+        </div>
         <p className="text-xs" style={{ color: 'var(--text-dim)' }}>{stats.inInv} on hand · {stats.total} total</p>
       </header>
       <main key={tab} className="screen-fade">
-        {tab === 'add' && <AddSlabScreen editingItem={editingItem} onSaved={addOrUpdate} onCancelEdit={() => setEditingItem(null)} notify={notify} psaToken={psaToken} />}
+        {tab === 'add' && <AddSlabScreen editingItem={editingItem} onSaved={addOrUpdate} onCancelEdit={() => setEditingItem(null)} notify={notify} psaToken={psaToken} items={items} />}
         {tab === 'search' && <SearchScreen items={items} onEdit={(it) => { setEditingItem(it); setTab('add'); }} onDelete={deleteItem} onGoSell={goSell} onGoTrade={goTrade} onRevert={revertItem} onExport={exportCSV} />}
         {tab === 'sell' && <SellScreen items={items} presetItem={presetSell} clearPreset={() => setPresetSell(null)} onComplete={addOrUpdate} notify={notify} />}
         {tab === 'trade' && <TradeScreen items={items} presetItem={presetTrade} clearPreset={() => setPresetTrade(null)} onComplete={addOrUpdate} notify={notify} />}
         {tab === 'show' && <ShowModeScreen items={items} onNav={setTab} />}
-        {tab === 'settings' && <SettingsScreen psaToken={psaToken} onSaveToken={saveTokenHandler} notify={notify} />}
+        {tab === 'settings' && <SettingsScreen psaToken={psaToken} onSaveToken={saveTokenHandler} notify={notify} theme={theme} onChangeTheme={changeTheme} />}
       </main>
       <nav className="fixed bottom-0 inset-x-0 z-30 flex nav-blur nav-safe-pad" style={{ borderTop: '1px solid var(--border)' }}>
         {TABS.map(({ id, label, icon }) => {
           const active = tab === id;
           return (
             <button key={id} onClick={() => { setTab(id); if (id !== 'add') setEditingItem(null); }}
-              className={`flex-1 flex flex-col items-center gap-1 pt-2.5 nav-indicator ${active ? 'active' : ''}`}
+              className="flex-1 flex flex-col items-center gap-1 pt-2"
               style={{ color: active ? 'var(--gold)' : 'var(--text-dim)' }}>
-              <Icon name={icon} size={20} />
+              <span className="rounded-full flex items-center justify-center" style={{ width: 30, height: 30, background: active ? 'var(--gold)' : 'transparent' }}>
+                <Icon name={icon} size={18} style={{ color: active ? '#1a1305' : 'var(--text-dim)' }} />
+              </span>
               <span className="text-[11px] font-semibold">{label}</span>
             </button>
           );

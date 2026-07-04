@@ -70,6 +70,7 @@
     return {
       cardName: cardName || '',
       grade: gradeShort || '',
+      gradeLabel: grade || '',
       raw: cert,
       found: !!(cardName || gradeShort),
     };
