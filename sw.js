@@ -1,4 +1,4 @@
-const CACHE = 'slab-ledger-v2';
+const CACHE = 'slab-ledger-v4';
 
 const SHELL = [
   './',
