@@ -40,8 +40,8 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
 
-  // PSA API calls: always go to network, never cache (live data).
-  if (req.url.includes('api.psacard.com')) return;
+  // POST requests (including our PSA lookup proxy call) are never
+  // intercepted — the method check above already returns for those.
 
   event.respondWith(
     caches.match(req).then((cached) => {

@@ -1,4 +1,6 @@
-/* PSA Public API helper — https://www.psacard.com/publicapi */
+/* PSA Public API helper — now routed through a Netlify function proxy
+   (netlify/functions/psa-lookup.js) instead of calling PSA directly from
+   the browser. See that file for why. */
 (function () {
   async function psaLookupCert(certNumber, token) {
     if (!token) {
@@ -6,10 +8,16 @@
       err.code = 'NO_TOKEN';
       throw err;
     }
-    const res = await fetch(`https://api.psacard.com/publicapi/cert/GetByCertNumber/${encodeURIComponent(certNumber)}`, {
-      method: 'GET',
-      headers: { authorization: `bearer ${token}` },
+    const res = await fetch('/.netlify/functions/psa-lookup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ certNumber, token }),
     });
+    if (res.status === 429) {
+      const err = new Error('PSA is rate-limiting requests right now.');
+      err.code = 'RATE_LIMIT';
+      throw err;
+    }
     if (res.status === 500) {
       const err = new Error('PSA rejected the request — your API token may be invalid or expired.');
       err.code = 'AUTH';
