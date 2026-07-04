@@ -130,7 +130,8 @@ function Btn({ children, onClick, variant = 'primary', className = '', type = 'b
     ghost: { background: 'var(--surface2)', color: 'var(--text)', border: '1px solid var(--border)' },
     outlineGold: { background: 'transparent', color: 'var(--gold)', border: '1px solid var(--gold)' },
   };
-  return <button type={type} disabled={disabled} onClick={onClick} className={`${base} ${className}`} style={styles[variant]}>{children}</button>;
+  const shadowed = variant === 'primary' || variant === 'danger';
+  return <button type={type} disabled={disabled} onClick={onClick} className={`${base} ${shadowed ? 'shadow-btn' : ''} ${className}`} style={styles[variant]}>{children}</button>;
 }
 
 function StatusBadge({ status }) {
@@ -145,7 +146,7 @@ function StatusBadge({ status }) {
 
 function SlabChip({ item, onClick }) {
   return (
-    <button onClick={onClick} className="w-full text-left rounded-xl overflow-hidden active:scale-[0.98] transition-transform" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+    <button onClick={onClick} className="w-full text-left rounded-xl overflow-hidden active:scale-[0.98] transition-transform shadow-card" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
       <div className="flex">
         <div className="flex flex-col items-center justify-center px-3 py-2 shrink-0" style={{ background: 'var(--accent)', minWidth: 64 }}>
           <span className="text-[10px] font-bold tracking-widest text-white/80">GRADE</span>
@@ -158,9 +159,9 @@ function SlabChip({ item, onClick }) {
           </div>
           <p className="font-mono text-xs mt-1" style={{ color: 'var(--text-dim)' }}>CERT #{item.certNumber || '—'}</p>
           <div className="flex items-center justify-between mt-1.5">
-            <span className="text-xs" style={{ color: 'var(--text-dim)' }}>Cost {money(item.cost)}</span>
-            {item.status === 'Sold' && <span className="text-xs font-semibold" style={{ color: item.sale?.netProfit >= 0 ? 'var(--green)' : 'var(--danger)' }}>Net {money(item.sale?.netProfit)}</span>}
-            {item.status === 'Traded' && <span className="text-xs font-semibold" style={{ color: item.trade?.gainLoss >= 0 ? 'var(--green)' : 'var(--danger)' }}>Δ {money(item.trade?.gainLoss)}</span>}
+            <span className="text-xs tabular-nums" style={{ color: 'var(--text-dim)' }}>Cost {money(item.cost)}</span>
+            {item.status === 'Sold' && <span className="text-xs font-semibold tabular-nums" style={{ color: item.sale?.netProfit >= 0 ? 'var(--green)' : 'var(--danger)' }}>Net {money(item.sale?.netProfit)}</span>}
+            {item.status === 'Traded' && <span className="text-xs font-semibold tabular-nums" style={{ color: item.trade?.gainLoss >= 0 ? 'var(--green)' : 'var(--danger)' }}>Δ {money(item.trade?.gainLoss)}</span>}
           </div>
         </div>
         <div className="flex items-center pr-2" style={{ color: 'var(--text-dim)' }}><Icon name="chevronRight" size={18} /></div>
@@ -310,6 +311,8 @@ function AddSlabScreen({ editingItem, onSaved, onCancelEdit, notify, psaToken })
       setLookupState('error');
       if (err.code === 'AUTH') {
         setNote({ tone: 'error', text: 'PSA rejected your API token \u2014 it may have expired. Grab a fresh one from psacard.com/publicapi and update it in Settings.' });
+      } else if (err.code === 'RATE_LIMIT') {
+        setNote({ tone: 'limited', text: 'PSA is rate-limiting lookups right now (free tier: 100/day, plus short-term throttling). Cert number is saved \u2014 wait a bit before trying again, or fill in the rest manually.' });
       } else {
         setNote({ tone: 'error', text: 'PSA lookup failed. Cert number is saved \u2014 fill in the rest manually or try the lookup again.' });
       }
@@ -451,7 +454,7 @@ function Row({ label, value, valueColor }) {
   return (
     <div className="flex items-center justify-between py-1">
       <span className="text-sm" style={{ color: 'var(--text-dim)' }}>{label}</span>
-      <span className="text-sm font-semibold" style={{ color: valueColor || 'var(--text)' }}>{value}</span>
+      <span className="text-sm font-semibold tabular-nums" style={{ color: valueColor || 'var(--text)' }}>{value}</span>
     </div>
   );
 }
@@ -705,8 +708,8 @@ function TradeScreen({ items, presetItem, clearPreset, onComplete, notify }) {
 
 function ScoreCard({ label, value, highlight, small }) {
   return (
-    <div className="rounded-lg py-3 px-2 text-center" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <p className={`font-display font-bold ${small ? 'text-lg' : 'text-2xl'}`} style={{ color: highlight === false ? 'var(--danger)' : highlight === true ? 'var(--green)' : 'var(--text)' }}>{value}</p>
+    <div className="rounded-lg py-3 px-2 text-center shadow-card" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <p className={`font-display font-bold tabular-nums ${small ? 'text-lg' : 'text-2xl'}`} style={{ color: highlight === false ? 'var(--danger)' : highlight === true ? 'var(--green)' : 'var(--text)' }}>{value}</p>
       <p className="text-[10px] uppercase tracking-wide mt-0.5" style={{ color: 'var(--text-dim)' }}>{label}</p>
     </div>
   );
@@ -714,7 +717,7 @@ function ScoreCard({ label, value, highlight, small }) {
 
 function BigButton({ iconName, label, onClick, color, textColor }) {
   return (
-    <button onClick={onClick} className="rounded-xl py-5 flex flex-col items-center justify-center gap-1.5 active:scale-[0.97] transition-transform" style={{ background: color, color: textColor }}>
+    <button onClick={onClick} className="rounded-xl py-5 flex flex-col items-center justify-center gap-1.5 active:scale-[0.97] transition-transform shadow-card" style={{ background: color, color: textColor }}>
       <Icon name={iconName} size={26} /><span className="font-semibold text-sm">{label}</span>
     </button>
   );
@@ -852,17 +855,24 @@ function App() {
   const stats = useMemo(() => ({ total: items.length, inInv: items.filter((it) => it.status === 'In Inventory').length }), [items]);
 
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg)' }}><p style={{ color: 'var(--text-dim)' }}>Loading inventory…</p></div>;
+    return (
+      <div className="min-h-screen px-4 pt-6" style={{ background: 'var(--bg)' }}>
+        <div className="skeleton h-6 mb-6" style={{ width: '40%' }} />
+        <div className="skeleton h-16 mb-3" />
+        <div className="skeleton h-16 mb-3" />
+        <div className="skeleton h-16 mb-3" style={{ width: '80%' }} />
+      </div>
+    );
   }
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)', fontFamily: 'Inter, sans-serif' }}>
       <Toast text={toast} />
-      <header className="sticky top-0 z-30 px-4 py-3 flex items-center justify-between" style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
+      <header className="sticky top-0 z-30 px-4 py-3 flex items-center justify-between header-blur" style={{ borderBottom: '1px solid var(--border)' }}>
         <h1 className="font-display text-xl font-bold tracking-wide" style={{ color: 'var(--text)' }}>SLAB LEDGER</h1>
         <p className="text-xs" style={{ color: 'var(--text-dim)' }}>{stats.inInv} on hand · {stats.total} total</p>
       </header>
-      <main>
+      <main key={tab} className="screen-fade">
         {tab === 'add' && <AddSlabScreen editingItem={editingItem} onSaved={addOrUpdate} onCancelEdit={() => setEditingItem(null)} notify={notify} psaToken={psaToken} />}
         {tab === 'search' && <SearchScreen items={items} onEdit={(it) => { setEditingItem(it); setTab('add'); }} onDelete={deleteItem} onGoSell={goSell} onGoTrade={goTrade} onRevert={revertItem} onExport={exportCSV} />}
         {tab === 'sell' && <SellScreen items={items} presetItem={presetSell} clearPreset={() => setPresetSell(null)} onComplete={addOrUpdate} notify={notify} />}
@@ -870,11 +880,13 @@ function App() {
         {tab === 'show' && <ShowModeScreen items={items} onNav={setTab} />}
         {tab === 'settings' && <SettingsScreen psaToken={psaToken} onSaveToken={saveTokenHandler} notify={notify} />}
       </main>
-      <nav className="fixed bottom-0 inset-x-0 z-30 flex" style={{ background: 'var(--surface)', borderTop: '1px solid var(--border)' }}>
+      <nav className="fixed bottom-0 inset-x-0 z-30 flex nav-blur nav-safe-pad" style={{ borderTop: '1px solid var(--border)' }}>
         {TABS.map(({ id, label, icon }) => {
           const active = tab === id;
           return (
-            <button key={id} onClick={() => { setTab(id); if (id !== 'add') setEditingItem(null); }} className="flex-1 flex flex-col items-center gap-1 py-2.5" style={{ color: active ? 'var(--gold)' : 'var(--text-dim)' }}>
+            <button key={id} onClick={() => { setTab(id); if (id !== 'add') setEditingItem(null); }}
+              className={`flex-1 flex flex-col items-center gap-1 pt-2.5 nav-indicator ${active ? 'active' : ''}`}
+              style={{ color: active ? 'var(--gold)' : 'var(--text-dim)' }}>
               <Icon name={icon} size={20} />
               <span className="text-[11px] font-semibold">{label}</span>
             </button>
