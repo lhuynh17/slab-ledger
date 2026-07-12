@@ -2,13 +2,15 @@
    (netlify/functions/psa-lookup.js) instead of calling PSA directly from
    the browser. See that file for why. */
 (function () {
-  async function psaLookupCert(certNumber, token) {
+  const DEFAULT_PROXY = '/.netlify/functions/psa-lookup';
+
+  async function psaLookupCert(certNumber, token, proxyUrl) {
     if (!token) {
       const err = new Error('No PSA API token saved. Add one in Settings.');
       err.code = 'NO_TOKEN';
       throw err;
     }
-    const res = await fetch('/.netlify/functions/psa-lookup', {
+    const res = await fetch(proxyUrl || DEFAULT_PROXY, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ certNumber, token }),

@@ -9,6 +9,8 @@ const { psaLookupCert, mapPSAResponse } = window.psaApi;
 const INV_KEY = 'inventory';
 const TOKEN_KEY = 'psa_token';
 const THEME_KEY = 'theme';
+const PROXY_KEY = 'psa_proxy_url';
+const DEFAULT_PROXY_URL = '/.netlify/functions/psa-lookup';
 const SOURCE_PRESETS = ['Local Purchase', 'eBay', 'Card Show', 'Trade-in', 'Consignment', 'Other'];
 const GRADES = ['10', '9.5', '9', '8.5', '8', '7.5', '7', '6', '5', '4', '3', '2', '1', 'Authentic'];
 const PAYMENT_MEDIUMS = ['Cash', 'Venmo', 'PayPal', 'Zelle', 'CashApp', 'Credit Card', 'Check', 'Trade + Cash', 'Other'];
@@ -51,6 +53,12 @@ async function loadTheme() {
 }
 async function saveTheme(theme) {
   try { await idbSet(THEME_KEY, theme); return true; } catch (e) { return false; }
+}
+async function loadProxyUrl() {
+  try { return (await idbGet(PROXY_KEY)) || DEFAULT_PROXY_URL; } catch (e) { return DEFAULT_PROXY_URL; }
+}
+async function saveProxyUrl(url) {
+  try { await idbSet(PROXY_KEY, url); return true; } catch (e) { return false; }
 }
 function applyThemeColorMeta(theme) {
   const meta = document.querySelector('meta[name="theme-color"]');
@@ -363,7 +371,7 @@ function QuickTips() {
   );
 }
 
-function AddSlabScreen({ editingItem, onSaved, onCancelEdit, notify, psaToken, items }) {
+function AddSlabScreen({ editingItem, onSaved, onCancelEdit, notify, psaToken, proxyUrl, items }) {
   const [form, setForm] = useState(editingItem ? {
     certNumber: editingItem.certNumber, cardName: editingItem.cardName, grade: editingItem.grade,
     gradeLabel: editingItem.gradeLabel || '', cost: String(editingItem.cost ?? ''), source: editingItem.source,
@@ -428,7 +436,7 @@ function AddSlabScreen({ editingItem, onSaved, onCancelEdit, notify, psaToken, i
     }
     setLookupState('looking');
     try {
-      const data = await psaLookupCert(cert, psaToken);
+      const data = await psaLookupCert(cert, psaToken, proxyUrl);
       const mapped = mapPSAResponse(data);
       if (mapped.found) {
         setForm((f) => ({ ...f, cardName: mapped.cardName || f.cardName, grade: normalizeGrade(mapped.grade) || f.grade, gradeLabel: mapped.gradeLabel || f.gradeLabel }));
@@ -1014,9 +1022,12 @@ function ShowModeScreen({ items, onNav }) {
 /* Settings — PSA API token                                            */
 /* ------------------------------------------------------------------ */
 
-function SettingsScreen({ psaToken, onSaveToken, notify, theme, onChangeTheme }) {
+function SettingsScreen({ psaToken, onSaveToken, notify, theme, onChangeTheme, proxyUrl, onChangeProxyUrl }) {
   const [value, setValue] = useState(psaToken || '');
+  const [proxyValue, setProxyValue] = useState(proxyUrl || DEFAULT_PROXY_URL);
   const save = async () => { await onSaveToken(value.trim()); notify(value.trim() ? 'PSA token saved' : 'PSA token cleared'); };
+  const saveProxy = async () => { await onChangeProxyUrl(proxyValue); notify('PSA lookup address saved'); };
+  const resetProxy = async () => { setProxyValue(DEFAULT_PROXY_URL); await onChangeProxyUrl(DEFAULT_PROXY_URL); notify('Reset to default (Netlify)'); };
 
   return (
     <div className="px-4 pt-4 pb-28">
@@ -1046,6 +1057,21 @@ function SettingsScreen({ psaToken, onSaveToken, notify, theme, onChangeTheme })
         </Field>
         <Btn onClick={save}><Icon name="check" size={16} /> Save token</Btn>
       </div>
+
+      <div className="rounded-lg p-4 mb-4 shadow-card" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+        <p className="text-sm font-semibold mb-2" style={{ color: 'var(--text)' }}>PSA lookup address</p>
+        <p className="text-xs mb-3" style={{ color: 'var(--text-dim)' }}>
+          Where lookups are routed through. Leave as-is unless you've set up your own proxy (e.g. on a home server) for more reliable PSA access.
+        </p>
+        <Field label="Proxy URL">
+          <TextInput value={proxyValue} onChange={(e) => setProxyValue(e.target.value)} placeholder={DEFAULT_PROXY_URL} />
+        </Field>
+        <div className="grid grid-cols-2 gap-2">
+          <Btn onClick={saveProxy}><Icon name="check" size={16} /> Save</Btn>
+          <Btn variant="ghost" onClick={resetProxy}>Reset to default</Btn>
+        </div>
+      </div>
+
       <div className="rounded-lg p-4 shadow-card" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
         <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>About this app</p>
         <p className="text-xs" style={{ color: 'var(--text-dim)' }}>Slab Ledger stores everything locally on this device (IndexedDB) — nothing syncs to a server. Use the CSV export on the Inventory screen to back up or move your data.</p>
@@ -1071,6 +1097,7 @@ const TABS = [
 function App() {
   const [items, setItems] = useState([]);
   const [psaToken, setPsaToken] = useState('');
+  const [proxyUrl, setProxyUrlState] = useState(DEFAULT_PROXY_URL);
   const [theme, setThemeState] = useState('dark');
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('add');
@@ -1080,8 +1107,8 @@ function App() {
   const [toast, setToast] = useState('');
 
   useEffect(() => {
-    Promise.all([loadInventory(), loadToken(), loadTheme()]).then(([inv, token, savedTheme]) => {
-      setItems(inv); setPsaToken(token);
+    Promise.all([loadInventory(), loadToken(), loadTheme(), loadProxyUrl()]).then(([inv, token, savedTheme, savedProxy]) => {
+      setItems(inv); setPsaToken(token); setProxyUrlState(savedProxy);
       const initialTheme = savedTheme || (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
       setThemeState(initialTheme);
       applyThemeColorMeta(initialTheme);
@@ -1093,6 +1120,12 @@ function App() {
     setThemeState(next);
     applyThemeColorMeta(next);
     await saveTheme(next);
+  }, []);
+
+  const changeProxyUrl = useCallback(async (next) => {
+    const cleaned = (next || '').trim() || DEFAULT_PROXY_URL;
+    setProxyUrlState(cleaned);
+    await saveProxyUrl(cleaned);
   }, []);
 
   const notify = useCallback((text) => { setToast(text); setTimeout(() => setToast(''), 1800); }, []);
@@ -1156,12 +1189,12 @@ function App() {
         <p className="text-xs" style={{ color: 'var(--text-dim)' }}>{stats.inInv} on hand · {stats.total} total</p>
       </header>
       <main key={tab} className="screen-fade">
-        {tab === 'add' && <AddSlabScreen editingItem={editingItem} onSaved={addOrUpdate} onCancelEdit={() => setEditingItem(null)} notify={notify} psaToken={psaToken} items={items} />}
+        {tab === 'add' && <AddSlabScreen editingItem={editingItem} onSaved={addOrUpdate} onCancelEdit={() => setEditingItem(null)} notify={notify} psaToken={psaToken} proxyUrl={proxyUrl} items={items} />}
         {tab === 'search' && <SearchScreen items={items} onEdit={(it) => { setEditingItem(it); setTab('add'); }} onDelete={deleteItem} onGoSell={goSell} onGoTrade={goTrade} onRevert={revertItem} onExport={exportCSV} />}
         {tab === 'sell' && <SellScreen items={items} presetItem={presetSell} clearPreset={() => setPresetSell(null)} onComplete={addOrUpdate} notify={notify} />}
         {tab === 'trade' && <TradeScreen items={items} presetItem={presetTrade} clearPreset={() => setPresetTrade(null)} onComplete={addOrUpdate} notify={notify} />}
         {tab === 'show' && <ShowModeScreen items={items} onNav={setTab} />}
-        {tab === 'settings' && <SettingsScreen psaToken={psaToken} onSaveToken={saveTokenHandler} notify={notify} theme={theme} onChangeTheme={changeTheme} />}
+        {tab === 'settings' && <SettingsScreen psaToken={psaToken} onSaveToken={saveTokenHandler} notify={notify} theme={theme} onChangeTheme={changeTheme} proxyUrl={proxyUrl} onChangeProxyUrl={changeProxyUrl} />}
       </main>
       <nav className="fixed bottom-0 inset-x-0 z-30 flex nav-blur nav-safe-pad" style={{ borderTop: '1px solid var(--border)' }}>
         {TABS.map(({ id, label, icon }) => {
