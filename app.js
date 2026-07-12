@@ -111,13 +111,37 @@ function fileToDataURL(file) {
   });
 }
 
-async function ocrCertNumber(file) {
+async function ocrLabel(file) {
   const dataUrl = await fileToDataURL(file);
   const result = await Tesseract.recognize(dataUrl, 'eng');
   const text = result.data.text || '';
-  const matches = text.match(/\d{7,10}/g) || [];
-  matches.sort((a, b) => b.length - a.length);
-  return { text, certNumber: matches[0] || '' };
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+
+  // Cert number: longest run of 7-10 digits anywhere in the text.
+  const digitMatches = text.match(/\d{7,10}/g) || [];
+  digitMatches.sort((a, b) => b.length - a.length);
+  const certNumber = digitMatches[0] || '';
+
+  // Grade: look for a PSA grade descriptor, plus a standalone 1-10 (with .5s) near it.
+  const GRADE_WORD = /(GEM\s?MT|GEM\s?MINT|MINT|NM-?MT|EX-?MT|EX-?NM|VG-?EX|GOOD|FAIR|POOR|AUTHENTIC|AUTH)\b/i;
+  const NUM_ONLY = /^(10|[1-9](\.5)?)$/;
+  let grade = '';
+  let gradeLabel = '';
+  const wordMatch = text.match(GRADE_WORD);
+  const numMatch = text.match(/\b(10|[1-9]\.5)\b/) || lines.find((l) => NUM_ONLY.test(l)) && [lines.find((l) => NUM_ONLY.test(l))];
+  if (wordMatch) {
+    grade = numMatch ? numMatch[1] || numMatch[0] : '';
+    gradeLabel = `${wordMatch[0]}${grade ? ' ' + grade : ''}`.toUpperCase().replace(/\s+/g, ' ').trim();
+  } else if (numMatch) {
+    grade = numMatch[1] || numMatch[0];
+  }
+
+  // Card name: whatever's left after stripping the cert number, PSA/grade noise, and short junk lines.
+  const NOISE = /^(psa|gem\s?mt|gem\s?mint|mint|nm-?mt|ex-?mt|ex-?nm|vg-?ex|good|fair|poor|authentic|auth|\d{7,10}|10|[1-9]\.5|[1-9])$/i;
+  const nameLines = lines.filter((l) => !NOISE.test(l) && l.replace(/[^a-zA-Z0-9]/g, '').length >= 3);
+  const cardName = nameLines.slice(0, 3).join(' ').replace(/\s+/g, ' ').trim();
+
+  return { text, certNumber, grade, gradeLabel, cardName };
 }
 
 /* ------------------------------------------------------------------ */
@@ -464,18 +488,31 @@ function AddSlabScreen({ editingItem, onSaved, onCancelEdit, notify, psaToken, p
     setOcrState('reading');
     setNote(null);
     try {
-      const { certNumber } = await ocrCertNumber(file);
-      if (certNumber) {
-        setForm((f) => ({ ...f, certNumber }));
+      const read = await ocrLabel(file);
+      const filledSomething = read.certNumber || read.cardName || read.grade;
+      if (filledSomething) {
+        setForm((f) => ({
+          ...f,
+          certNumber: read.certNumber || f.certNumber,
+          cardName: read.cardName || f.cardName,
+          grade: normalizeGrade(read.grade) || f.grade,
+          gradeLabel: read.gradeLabel || f.gradeLabel,
+        }));
         setOcrState('done');
-        await runPsaLookup(certNumber);
+        const missing = [!read.certNumber && 'cert number', !read.cardName && 'card name', !read.grade && 'grade'].filter(Boolean);
+        setNote({
+          tone: 'limited',
+          text: missing.length
+            ? `Filled in what we could read \u2014 double-check everything, and fill in ${missing.join(', ')} by hand.`
+            : 'Read from the photo \u2014 double-check everything before saving, OCR isn\u2019t perfect.',
+        });
       } else {
         setOcrState('done');
-        setNote({ tone: 'limited', text: 'Couldn\u2019t clearly read a cert number from that photo. Try better lighting/focus, or enter it manually.' });
+        setNote({ tone: 'limited', text: 'Couldn\u2019t clearly read that label. Try better lighting/focus, or enter the details manually.' });
       }
     } catch (err) {
       setOcrState('error');
-      setNote({ tone: 'error', text: 'Couldn\u2019t read that photo. Enter the cert number manually.' });
+      setNote({ tone: 'error', text: 'Couldn\u2019t read that photo. Enter the details manually.' });
     }
   };
 
@@ -524,8 +561,8 @@ function AddSlabScreen({ editingItem, onSaved, onCancelEdit, notify, psaToken, p
             <Icon name="zap" size={20} style={{ color: 'var(--gold)' }} />
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Look up your card on PSA</p>
-            <p className="text-xs" style={{ color: 'var(--text-dim)' }}>Snap a photo of the label or upload one and we'll fill in the details.</p>
+            <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Read the label</p>
+            <p className="text-xs" style={{ color: 'var(--text-dim)' }}>Snap a photo or upload one and we'll pull the cert #, name, and grade off it.</p>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-2 mb-4">
@@ -550,7 +587,7 @@ function AddSlabScreen({ editingItem, onSaved, onCancelEdit, notify, psaToken, p
           <div className="flex-1 h-px" style={{ background: 'var(--border)' }} />
         </div>
 
-        <Field label="Enter PSA cert number manually">
+        <Field label="Enter cert number manually">
           <div className="flex gap-2">
             <TextInput ref={certRef} inputMode="numeric" value={form.certNumber} onChange={set('certNumber')} />
             <button onClick={() => setScanning(true)} className="shrink-0 rounded-lg px-4 flex items-center justify-center" style={{ background: 'var(--accent)' }} aria-label="Scan barcode">
@@ -559,7 +596,7 @@ function AddSlabScreen({ editingItem, onSaved, onCancelEdit, notify, psaToken, p
           </div>
         </Field>
         <Btn onClick={() => form.certNumber.trim() && runPsaLookup(form.certNumber.trim())} disabled={!form.certNumber.trim() || lookupState === 'looking'} variant="ghost">
-          <Icon name="search" size={16} /> Look Up
+          <Icon name="search" size={16} /> Verify with PSA (optional)
         </Btn>
       </div>
 
